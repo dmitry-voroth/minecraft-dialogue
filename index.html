@@ -1,53 +1,14 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Minecraft Dialogue Generator (Fixed Syntax Edition)</title>
+  <title>Minecraft Dialogue Generator (Robust Edition)</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 flex flex-col items-center min-h-screen">
   <div class="container mx-auto p-4 max-w-4xl">
-    <h1 class="text-3xl font-bold text-center mb-6">Minecraft Dialogue Generator (Fixed Syntax Edition)</h1>
+    <h1 class="text-3xl font-bold text-center mb-6">Minecraft Dialogue Generator (Robust Edition)</h1>
     
     <div class="mb-6">
       <button onclick="showTab('characters')" class="bg-blue-500 text-white px-4 py-2 rounded-md mr-2">Управление персонажами</button>
@@ -288,7 +249,6 @@
         delayField.classList.toggle('hidden', this.value !== 'delay');
       });
 
-      // Используем MutationObserver вместо DOMSubtreeModified
       const choicesDiv = lineDiv.querySelector('.choices');
       const observer = new MutationObserver(() => updateTransitionState(lineDiv));
       observer.observe(choicesDiv, { childList: true });
@@ -315,201 +275,235 @@
     }
 
     function generateDialogue() {
-  try {
-    console.log('🧠 Начало генерации диалога...');
+      try {
+        console.log('Начало генерации диалога...');
+        const version = document.getElementById('minecraft-version')?.value;
+        const scoreboard = document.getElementById('scoreboard-name')?.value.trim() || 'Dialog';
+        const plotScoreboard = document.getElementById('plot-scoreboard')?.value.trim() || 'PlotPoints';
+        const namespace = document.getElementById('namespace')?.value.trim() || 'dialog';
 
-    // 🔧 Чтение данных
-    const version = document.getElementById('minecraft-version').value;
-    const scoreboard = document.getElementById('scoreboard-name').value.trim() || 'Dialog';
-    const plotScoreboard = document.getElementById('plot-scoreboard').value.trim() || 'PlotPoints';
-    const namespace = document.getElementById('namespace').value.trim() || 'dialog';
+        if (!version) throw new Error('Выберите версию Minecraft!');
 
-    // 🧩 Сбор реплик
-    const lines = Array.from(document.querySelectorAll('.line')).map((line) => {
-      const characterName = line.querySelector('.line-character').value;
-      const character = characters.find(c => c.name === characterName) || { name: '', color: 'white' };
-      const text = line.querySelector('.line-text').value.trim();
-      const transition = line.querySelector('.line-transition').value;
-      const delay = parseInt(line.querySelector('.line-delay').value || '100');
-      const plotType = line.querySelector('.plot-condition-type').value;
-      const plotValue = parseInt(line.querySelector('.plot-condition-value').value || '0');
+        console.log('Собираем данные реплик...');
+        const lines = Array.from(document.querySelectorAll('.line')).map((line, index) => {
+          console.log(`Обработка реплики ${index + 1}`);
+          
+          const characterSelect = line.querySelector('.line-character');
+          const textInput = line.querySelector('.line-text');
+          const transitionSelect = line.querySelector('.line-transition');
+          const delayInput = line.querySelector('.line-delay');
+          const plotConditionTypeSelect = line.querySelector('.plot-condition-type');
+          const plotConditionValueInput = line.querySelector('.plot-condition-value');
 
-      const choices = Array.from(line.querySelectorAll('.choice')).map(choice => {
-        const choiceText = choice.querySelector('.choice-text').value.trim();
-        const choiceFunc = choice.querySelector('.choice-function').value.trim();
-        const choiceColor = choice.querySelector('.choice-color').value;
-        const plotPoints = parseInt(choice.querySelector('.choice-plot-points').value || '0');
-        const followText = choice.querySelector('.choice-followup').value.trim();
-        const followCharName = choice.querySelector('.choice-followup-character').value;
-        const followChar = characters.find(c => c.name === followCharName) || { name: '', color: 'white' };
-
-        return {
-          text: choiceText,
-          function: choiceFunc,
-          color: choiceColor,
-          plotPoints,
-          followup: {
-            text: followText,
-            character: followChar
-          }
-        };
-      });
-
-      return {
-        character,
-        text,
-        transition,
-        delay,
-        plotCondition: { type: plotType, value: plotValue },
-        choices
-      };
-    });
-
-    // 🧼 Валидация
-    if (lines.length === 0) throw new Error('Добавьте хотя бы одну реплику!');
-    lines.forEach((line, i) => {
-      if (!line.character.name) throw new Error(`Реплика ${i + 1}: выбери персонажа`);
-      if (!line.text) throw new Error(`Реплика ${i + 1}: введи текст`);
-      line.choices.forEach((choice, j) => {
-        if (!choice.text) throw new Error(`Реплика ${i + 1}, выбор ${j + 1}: нет текста`);
-        if (!choice.function) throw new Error(`Реплика ${i + 1}, выбор ${j + 1}: нет имени функции`);
-        if (choice.followup.text && !choice.followup.character.name) {
-          throw new Error(`Реплика ${i + 1}, выбор ${j + 1}: выбери персонажа для последующей реплики`);
-        }
-      });
-    });
-
-    // 📦 Генерация
-    let mainCommands = `# 🎯 Инициализация\n`;
-    mainCommands += `scoreboard objectives add ${scoreboard} dummy\n`;
-    mainCommands += `scoreboard objectives add ${plotScoreboard} dummy\n`;
-    if (version === '1.12') mainCommands += `scoreboard objectives add DialogTimer dummy\n`;
-
-    mainCommands += `\n# 🚀 Начальные значения\n`;
-    mainCommands += (version === '1.12')
-      ? `scoreboard players set @a ${scoreboard} 0\nscoreboard players set @a ${plotScoreboard} 0\nscoreboard players set @a DialogTimer 0\n`
-      : `scoreboard players set @a[limit=1] ${scoreboard} 0\nscoreboard players set @a[limit=1] ${plotScoreboard} 0\n`;
-
-    let stage = 1;
-    let choiceFunctions = {};
-    let convergencePoints = [];
-
-    lines.forEach((line, i) => {
-      const cond = (line.plotCondition.type === 'none') ? '' : (() => {
-        const val = line.plotCondition.value;
-        if (version === '1.12') {
-          if (line.plotCondition.type === 'min') return ` if entity @a[score_${plotScoreboard}_min=${val}]`;
-          if (line.plotCondition.type === 'max') return ` if entity @a[score_${plotScoreboard}=${val}]`;
-          if (line.plotCondition.type === 'exact') return ` if entity @a[score_${plotScoreboard}=${val},score_${plotScoreboard}_min=${val}]`;
-        } else {
-          if (line.plotCondition.type === 'min') return ` if score @a[limit=1] ${plotScoreboard} matches ${val}..`;
-          if (line.plotCondition.type === 'max') return ` if score @a[limit=1] ${plotScoreboard} matches ..${val}`;
-          if (line.plotCondition.type === 'exact') return ` if score @a[limit=1] ${plotScoreboard} matches ${val}`;
-        }
-        return '';
-      })();
-
-      // 🗨️ Сообщение
-      mainCommands += `# Реплика ${stage}: ${line.character.name}\n`;
-      const message = `{"text":"[${line.character.name}] ${line.text.replace(/"/g, '\\"')}","color":"${line.character.color}"}`;
-      mainCommands += (version === '1.12')
-        ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a ${message}\n`
-        : `execute${cond} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] ${message}\n`;
-
-      // 🎯 Выборы
-      if (line.choices.length > 0) {
-        mainCommands += (version === '1.12')
-          ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a [`
-          : `execute${cond} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] [`;
-
-        line.choices.forEach((choice, ci) => {
-          mainCommands += `{"text":"${choice.text}","color":"${choice.color}","clickEvent":{"action":"run_command","value":"/function ${namespace}:${choice.function}"}}`;
-          if (ci < line.choices.length - 1) mainCommands += ',';
-
-          let funcBody = `# Выбор: ${choice.text}\n`;
-          if (choice.plotPoints !== 0) {
-            funcBody += (version === '1.12')
-              ? `scoreboard players add @a ${plotScoreboard} ${choice.plotPoints}\n`
-              : `scoreboard players add @a[limit=1] ${plotScoreboard} ${choice.plotPoints}\n`;
-          }
-          const nextStage = stage + ci + 1;
-          funcBody += (version === '1.12')
-            ? `scoreboard players set @a ${scoreboard} ${nextStage}\n`
-            : `scoreboard players set @a[limit=1] ${scoreboard} ${nextStage}\n`;
-
-          if (choice.followup.text) {
-            const msg = `{"text":"[${choice.followup.character.name}] ${choice.followup.text.replace(/"/g, '\\"')}","color":"${choice.followup.character.color}"}`;
-            funcBody += (version === '1.12')
-              ? `tellraw @a ${msg}\nscoreboard players set @a DialogTimer ${line.delay}\n`
-              : `tellraw @a[limit=1] ${msg}\nschedule function ${namespace}:dialog ${line.delay}t\n`;
+          if (!characterSelect || !textInput || !transitionSelect || !plotConditionTypeSelect) {
+            throw new Error(`Ошибка в структуре реплики ${index + 1}: отсутствуют необходимые поля`);
           }
 
-          choiceFunctions[choice.function] = funcBody;
+          const characterName = characterSelect.value;
+          const character = characters.find(c => c.name === characterName) || { name: '', color: 'white' };
+          const text = textInput.value.trim();
+          const transition = transitionSelect.value;
+          const delay = delayInput?.value ? parseInt(delayInput.value) || 100 : 100;
+          const plotConditionType = plotConditionTypeSelect.value;
+          const plotConditionValue = plotConditionValueInput?.value ? parseInt(plotConditionValueInput.value) || 0 : 0;
+          const plotCondition = { type: plotConditionType, value: plotConditionValue };
+
+          const choices = Array.from(line.querySelectorAll('.choice')).map((choice, choiceIndex) => {
+            console.log(`Обработка выбора ${choiceIndex + 1} в реплике ${index + 1}`);
+            const choiceTextInput = choice.querySelector('.choice-text');
+            const choiceFunctionInput = choice.querySelector('.choice-function');
+            const choiceColorSelect = choice.querySelector('.choice-color');
+            const choicePlotPointsInput = choice.querySelector('.choice-plot-points');
+            const followupTextInput = choice.querySelector('.choice-followup');
+            const followupCharacterSelect = choice.querySelector('.choice-followup-character');
+
+            if (!choiceTextInput || !choiceFunctionInput || !choiceColorSelect) {
+              throw new Error(`Ошибка в выборе ${choiceIndex + 1} реплики ${index + 1}: отсутствуют необходимые поля`);
+            }
+
+            const choiceText = choiceTextInput.value.trim();
+            const choiceFunction = choiceFunctionInput.value.trim();
+            const choiceColor = choiceColorSelect.value;
+            const choicePlotPoints = choicePlotPointsInput?.value ? parseInt(choicePlotPointsInput.value) || 0 : 0;
+            const followupText = followupTextInput?.value.trim() || '';
+            const followupCharacterName = followupCharacterSelect?.value || '';
+            const followupCharacter = characters.find(c => c.name === followupCharacterName) || { name: '', color: 'white' };
+
+            return {
+              text: choiceText,
+              function: choiceFunction,
+              color: choiceColor,
+              plotPoints: choicePlotPoints,
+              followup: { text: followupText, character: followupCharacter }
+            };
+          });
+
+          return { character, text, transition, delay, plotCondition, choices };
         });
 
-        mainCommands += `]\n`;
-        convergencePoints.push({ after: stage + line.choices.length, from: stage });
-        stage += line.choices.length;
-      } else {
-        if (i < lines.length - 1) {
-          if (line.transition === 'button') {
-            mainCommands += (version === '1.12')
-              ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a {"text":"[Далее]","color":"gray","clickEvent":{"action":"run_command","value":"/function ${namespace}:next"}}\n`
-              : `execute${cond} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] {"text":"[Далее]","color":"gray","clickEvent":{"action":"run_command","value":"/function ${namespace}:next"}}\n`;
-          } else if (line.transition === 'delay') {
-            mainCommands += (version === '1.12')
-              ? `scoreboard players set @a DialogTimer ${line.delay}\n`
-              : `schedule function ${namespace}:next ${line.delay}t\n`;
-          }
-          stage++;
+        console.log('Собранные данные:', lines);
+
+        // Валидация данных
+        if (lines.length === 0) throw new Error('Добавьте хотя бы одну реплику!');
+
+        lines.forEach((line, i) => {
+          if (!line.character.name) throw new Error(`Выберите персонажа для реплики ${i + 1}`);
+          if (!line.text) throw new Error(`Введите текст для реплики ${i + 1}`);
+          line.choices.forEach((choice, j) => {
+            if (!choice.text) throw new Error(`Введите текст для выбора ${j + 1} в реплике ${i + 1}`);
+            if (!choice.function) throw new Error(`Введите название функции для выбора ${j + 1} в реплике ${i + 1}`);
+            if (choice.followup.text && !choice.followup.character.name) {
+              throw new Error(`Выберите персонажа для последующей реплики в выборе ${j + 1} реплики ${i + 1}`);
+            }
+          });
+        });
+
+        // Генерация команд
+        console.log('Генерация команд...');
+        let stage = 1;
+        let mainCommands = `# Инициализация scoreboard\n`;
+        mainCommands += `scoreboard objectives add ${scoreboard} dummy\n`;
+        mainCommands += `scoreboard objectives add ${plotScoreboard} dummy\n`;
+        if (version === '1.12') {
+          mainCommands += `scoreboard objectives add DialogTimer dummy\n`;
         }
+        mainCommands += `\n# Установка начальных значений\n`;
+        mainCommands += version === '1.12'
+          ? `scoreboard players set @a ${scoreboard} 0\nscoreboard players set @a ${plotScoreboard} 0\nscoreboard players set @a DialogTimer 0\n`
+          : `scoreboard players set @a[limit=1] ${scoreboard} 0\nscoreboard players set @a[limit=1] ${plotScoreboard} 0\n`;
+        mainCommands += `\n# Команды для диалога\n`;
+
+        const choiceFunctions = {};
+        const convergencePoints = [];
+
+        lines.forEach((line, index) => {
+          console.log(`Генерация для реплики ${index + 1}, стадия ${stage}`);
+          let condition = '';
+          if (line.plotCondition.type !== 'none') {
+            const value = line.plotCondition.value;
+            if (version === '1.12') {
+              condition = ` if entity @a[score_${plotScoreboard}_min=${value}]`;
+              if (line.plotCondition.type === 'max') condition = ` if entity @a[score_${plotScoreboard}=${value}]`;
+              else if (line.plotCondition.type === 'exact') condition = ` if entity @a[score_${plotScoreboard}=${value},score_${plotScoreboard}_min=${value}]`;
+            } else {
+              condition = ` if score @a[limit=1] ${plotScoreboard} matches `;
+              condition += line.plotCondition.type === 'min' ? `${value}..` : line.plotCondition.type === 'max' ? `..${value}` : `${value}`;
+            }
+          }
+
+          mainCommands += `# Сообщение ${stage}: ${line.character.name}\n`;
+          mainCommands += version === '1.12'
+            ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a {"text":"[${line.character.name}] ${line.text.replace(/"/g, '\\"')}","color":"${line.character.color}"}\n`
+            : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] {"text":"[${line.character.name}] ${line.text.replace(/"/g, '\\"')}","color":"${line.character.color}"}\n`;
+
+          if (line.choices.length > 0) {
+            mainCommands += version === '1.12'
+              ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a [`
+              : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] [`;
+            line.choices.forEach((choice, choiceIndex) => {
+              mainCommands += `{"text":"${choice.text}","color":"${choice.color}","clickEvent":{"action":"run_command","value":"/function ${namespace}:${choice.function}"}}`;
+              if (choiceIndex < line.choices.length - 1) mainCommands += ',';
+              const nextStage = stage + choiceIndex + 1;
+              choiceFunctions[choice.function] = `# Функция для выбора: ${choice.text}\n`;
+              if (choice.plotPoints !== 0) {
+                choiceFunctions[choice.function] += version === '1.12'
+                  ? `scoreboard players add @a ${plotScoreboard} ${choice.plotPoints}\n`
+                  : `scoreboard players add @a[limit=1] ${plotScoreboard} ${choice.plotPoints}\n`;
+              }
+              choiceFunctions[choice.function] += version === '1.12'
+                ? `scoreboard players set @a ${scoreboard} ${nextStage}\n`
+                : `scoreboard players set @a[limit=1] ${scoreboard} ${nextStage}\n`;
+              if (choice.followup.text) {
+                choiceFunctions[choice.function] += version === '1.12'
+                  ? `tellraw @a {"text":"[${choice.followup.character.name}] ${choice.followup.text.replace(/"/g, '\\"')}","color":"${choice.followup.character.color}"}\n`
+                  : `tellraw @a[limit=1] {"text":"[${choice.followup.character.name}] ${choice.followup.text.replace(/"/g, '\\"')}","color":"${choice.followup.character.color}"}\n`;
+                choiceFunctions[choice.function] += version === '1.12'
+                  ? `scoreboard players set @a DialogTimer ${line.delay}\n`
+                  : `schedule function ${namespace}:dialog ${line.delay}t\n`;
+              }
+            });
+            mainCommands += `]\n`;
+            if (index < lines.length - 1) {
+              convergencePoints.push({ after: stage + line.choices.length, from: stage });
+            }
+            stage += line.choices.length;
+          } else if (index < lines.length - 1) {
+            if (line.transition === 'button') {
+              mainCommands += version === '1.12'
+                ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a {"text":"[Далее]","color":"gray","clickEvent":{"action":"run_command","value":"/function ${namespace}:next"}}}\n`
+                : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] {"text":"[Далее]","color":"gray","clickEvent":{"action":"run_command","value":"/function ${namespace}:next"}}}\n`;
+            } else if (line.transition === 'delay') {
+              mainCommands += version === '1.12'
+                ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ scoreboard players set @a DialogTimer ${line.delay}\n`
+                : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run schedule function ${namespace}:next ${line.delay}t\n`;
+            }
+            stage++;
+          }
+        });
+
+        mainCommands += `\n# Сброс диалога\n`;
+        mainCommands += version === '1.12'
+          ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ scoreboard players set @a ${scoreboard} 0\n`
+          : `execute if score @a[limit=1] ${scoreboard} matches ${stage} run scoreboard players set @a[limit=1] ${scoreboard} 0\n`;
+
+        if (version === '1.12') {
+          mainCommands += `\n# Обработка таймера\n`;
+          mainCommands += `scoreboard players remove @a[score_DialogTimer_min=1] DialogTimer 1\n`;
+          mainCommands += `execute @a[score_${scoreboard}_min=1..${stage},score_DialogTimer=0] ~ ~ ~ scoreboard players add @a ${scoreboard} 1\n`;
+        }
+
+        convergencePoints.forEach(point => {
+          console.log(`Обработка точки конвергенции: from ${point.from}, after ${point.after}`);
+          const lineIndex = lines.findIndex((_, i) => point.from === (i === 0 ? 1 : lines.slice(0, i).reduce((acc, l) => acc + (l.choices.length || 1), 1)));
+          if (lineIndex === -1 || !lines[lineIndex]) {
+            console.warn(`Пропущена точка конвергенции для стадии ${point.from}`);
+            return;
+          }
+          lines[lineIndex].choices.forEach((choice, i) => {
+            if (!choice.followup.text) {
+              choiceFunctions[choice.function] += version === '1.12'
+                ? `scoreboard players set @a DialogTimer ${lines[lineIndex].delay}\n`
+                : `schedule function ${namespace}:dialog ${lines[lineIndex].delay}t\n`;
+            }
+          });
+        });
+
+        const nextFunction = `# Продвиньте диалог\n`;
+        nextFunction += version === '1.12'
+          ? `scoreboard players add @a ${scoreboard} 1\n`
+          : `scoreboard players add @a[limit=1] ${scoreboard} 1\n`;
+
+        const files = {
+          'dialog.mcfunction': mainCommands,
+          'next.mcfunction': nextFunction,
+          ...Object.fromEntries(Object.entries(choiceFunctions).map(([name, content]) => [`${name}.mcfunction`, content]))
+        };
+
+        console.log('Сгенерированные файлы:', files);
+
+        const filesDiv = document.getElementById('files');
+        filesDiv.innerHTML = '';
+        Object.entries(files).forEach(([name, content]) => {
+          const fileDiv = document.createElement('div');
+          fileDiv.innerHTML = `
+            <h3 class="text-lg font-semibold">${name}</h3>
+            <pre class="bg-gray-100 p-4 rounded-md overflow-x-auto">${content}</pre>
+            <button onclick="copyText(this)" class="bg-green-500 text-white px-4 py-2 rounded-md mt-2">Копировать</button>
+          `;
+          filesDiv.appendChild(fileDiv);
+        });
+
+        document.getElementById('output').classList.remove('hidden');
+        window.generatedFiles = files;
+        window.version = version;
+        window.namespace = namespace;
+
+        alert('Команды успешно сгенерированы!');
+      } catch (error) {
+        console.error('Ошибка при генерации:', error);
+        alert(`Ошибка: ${error.message}. Проверьте консоль браузера для деталей.`);
       }
-    });
-
-    // 🧼 Сброс
-    mainCommands += `\n# 🔁 Сброс\n`;
-    mainCommands += (version === '1.12')
-      ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ scoreboard players set @a ${scoreboard} 0\n`
-      : `execute if score @a[limit=1] ${scoreboard} matches ${stage} run scoreboard players set @a[limit=1] ${scoreboard} 0\n`;
-
-    if (version === '1.12') {
-      mainCommands += `\n# ⏲️ Таймер\n`;
-      mainCommands += `scoreboard players remove @a[score_DialogTimer_min=1] DialogTimer 1\n`;
-      mainCommands += `execute @a[score_${scoreboard}_min=1..999,score_DialogTimer=0] ~ ~ ~ scoreboard players add @a ${scoreboard} 1\n`;
     }
-
-    // 🧬 Объединение
-    const files = {
-      'dialog.mcfunction': mainCommands,
-      'next.mcfunction': nextFunction,
-      ...Object.fromEntries(Object.entries(choiceFunctions).map(([k, v]) => [`${k}.mcfunction`, v]))
-    };
-
-    // 📋 Отображение
-    const filesDiv = document.getElementById('files');
-    filesDiv.innerHTML = '';
-    Object.entries(files).forEach(([name, content]) => {
-      const fileDiv = document.createElement('div');
-      fileDiv.innerHTML = `
-        <h3 class="text-lg font-semibold">${name}</h3>
-        <pre class="bg-gray-100 p-4 rounded-md overflow-x-auto">${content}</pre>
-        <button onclick="copyText(this)" class="bg-green-500 text-white px-4 py-2 rounded-md mt-2">Копировать</button>
-      `;
-      filesDiv.appendChild(fileDiv);
-    });
-
-    document.getElementById('output').classList.remove('hidden');
-    window.generatedFiles = files;
-    window.version = version;
-    window.namespace = namespace;
-
-    alert('✅ Команды успешно сгенерированы!');
-  } catch (error) {
-    console.error('❌ Ошибка генерации:', error);
-    alert(`Ошибка: ${error.message}. Загляни в консоль (F12) для подробностей.`);
-  }
-}
-
 
     function copyText(button) {
       try {
@@ -553,9 +547,7 @@
       }
     }
 
-    // Проверка загрузки скрипта
     console.log('Скрипт загружен, функции определены.');
-
     updateCharacterList();
     addLine();
   </script>
