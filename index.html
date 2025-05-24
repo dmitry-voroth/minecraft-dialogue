@@ -361,20 +361,26 @@
         // Генерация команд
         console.log('Генерация команд...');
         let stage = 1;
-        let mainCommands = `# Инициализация scoreboard\n`;
-        mainCommands += `scoreboard objectives add ${scoreboard} dummy\n`;
-        mainCommands += `scoreboard objectives add ${plotScoreboard} dummy\n`;
-        if (version === '1.12') {
-          mainCommands += `scoreboard objectives add DialogTimer dummy\n`;
-        }
-        mainCommands += `\n# Установка начальных значений\n`;
-        mainCommands += version === '1.12'
-          ? `scoreboard players set @a ${scoreboard} 0\nscoreboard players set @a ${plotScoreboard} 0\nscoreboard players set @a DialogTimer 0\n`
-          : `scoreboard players set @a[limit=1] ${scoreboard} 0\nscoreboard players set @a[limit=1] ${plotScoreboard} 0\n`;
-        mainCommands += `\n# Команды для диалога\n`;
 
+        // Инициализация
+        let initCommands = `# Инициализация scoreboard (выполнить один раз с /function ${namespace}:init)\n`;
+        initCommands += `scoreboard objectives add ${scoreboard} dummy\n`;
+        initCommands += `scoreboard objectives add ${plotScoreboard} dummy\n`;
+        if (version === '1.12') {
+          initCommands += `scoreboard objectives add DialogTimer dummy\n`;
+        }
+        initCommands += `\n# Установка начальных значений\n`;
+        initCommands += version === '1.12'
+          ? `scoreboard players set @p ${scoreboard} 0\nscoreboard players set @p ${plotScoreboard} 0\nscoreboard players set @p DialogTimer 0\n`
+          : `scoreboard players set @p ${scoreboard} 0\nscoreboard players set @p ${plotScoreboard} 0\n`;
+
+        // Функция диалога
+        let mainCommands = `# Диалог\n`;
         const choiceFunctions = {};
         const convergencePoints = [];
+
+        // Генерация команд для очистки чата
+        const clearChat = Array(20).fill().map(() => `tellraw @p " "`).join('\n');
 
         lines.forEach((line, index) => {
           console.log(`Генерация для реплики ${index + 1}, стадия ${stage}`);
@@ -382,31 +388,31 @@
           if (line.plotCondition.type !== 'none') {
             const value = line.plotCondition.value;
             if (version === '1.12') {
-              condition = ` if entity @a[score_${plotScoreboard}_min=${value}]`;
-              if (line.plotCondition.type === 'max') condition = ` if entity @a[score_${plotScoreboard}=${value}]`;
-              else if (line.plotCondition.type === 'exact') condition = ` if entity @a[score_${plotScoreboard}=${value},score_${plotScoreboard}_min=${value}]`;
+              condition = ` if entity @p[score_${plotScoreboard}_min=${value}]`;
+              if (line.plotCondition.type === 'max') condition = ` if entity @p[score_${plotScoreboard}=${value}]`;
+              else if (line.plotCondition.type === 'exact') condition = ` if entity @p[score_${plotScoreboard}=${value},score_${plotScoreboard}_min=${value}]`;
             } else {
-              condition = ` if score @a[limit=1] ${plotScoreboard} matches `;
+              condition = ` if score @p ${plotScoreboard} matches `;
               condition += line.plotCondition.type === 'min' ? `${value}..` : line.plotCondition.type === 'max' ? `..${value}` : `${value}`;
             }
           }
 
-          // Очистка чата перед сообщением
-          mainCommands += version === '1.12'
-            ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ clear\n`
-            : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run clear @a[limit=1]\n`;
-
-          // Вывод сообщения
+          // Очистка чата
           mainCommands += `# Сообщение ${stage}: ${line.character.name}\n`;
           mainCommands += version === '1.12'
-            ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a {"text":"[${line.character.name}] ${line.text.replace(/"/g, '\\"')}","color":"${line.character.color}"}\n`
-            : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] {"text":"[${line.character.name}] ${line.text.replace(/"/g, '\\"')}","color":"${line.character.color}"}\n`;
+            ? `execute @p[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ ${clearChat}\n`
+            : `execute${condition} if score @p ${scoreboard} matches ${stage} run ${clearChat}\n`;
+
+          // Вывод сообщения
+          mainCommands += version === '1.12'
+            ? `execute @p[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @p {"text":"[${line.character.name}] ${line.text.replace(/"/g, '\\"')}","color":"${line.character.color}"}\n`
+            : `execute${condition} if score @p ${scoreboard} matches ${stage} run tellraw @p {"text":"[${line.character.name}] ${line.text.replace(/"/g, '\\"')}","color":"${line.character.color}"}\n`;
 
           if (line.choices.length > 0) {
             // Вывод вариантов выбора
             mainCommands += version === '1.12'
-              ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a [`
-              : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] [`;
+              ? `execute @p[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @p [`
+              : `execute${condition} if score @p ${scoreboard} matches ${stage} run tellraw @p [`;
             line.choices.forEach((choice, choiceIndex) => {
               mainCommands += `{"text":"${choice.text}","color":"${choice.color}","clickEvent":{"action":"run_command","value":"/function ${namespace}:${choice.function}"}}`;
               if (choiceIndex < line.choices.length - 1) mainCommands += ',';
@@ -414,24 +420,28 @@
               choiceFunctions[choice.function] = `# Функция для выбора: ${choice.text}\n`;
               if (choice.plotPoints !== 0) {
                 choiceFunctions[choice.function] += version === '1.12'
-                  ? `scoreboard players add @a ${plotScoreboard} ${choice.plotPoints}\n`
-                  : `scoreboard players add @a[limit=1] ${plotScoreboard} ${choice.plotPoints}\n`;
+                  ? `scoreboard players add @p ${plotScoreboard} ${choice.plotPoints}\n`
+                  : `scoreboard players add @p ${plotScoreboard} ${choice.plotPoints}\n`;
               }
               choiceFunctions[choice.function] += version === '1.12'
-                ? `scoreboard players set @a ${scoreboard} ${nextStage}\n`
-                : `scoreboard players set @a[limit=1] ${scoreboard} ${nextStage}\n`;
+                ? `scoreboard players set @p ${scoreboard} ${nextStage}\n`
+                : `scoreboard players set @p ${scoreboard} ${nextStage}\n`;
               if (choice.followup.text) {
+                choiceFunctions[choice.function] += `${clearChat}\n`;
                 choiceFunctions[choice.function] += version === '1.12'
-                  ? `clear\n`
-                  : `clear @a[limit=1]\n`;
-                choiceFunctions[choice.function] += version === '1.12'
-                  ? `tellraw @a {"text":"[${choice.followup.character.name}] ${choice.followup.text.replace(/"/g, '\\"')}","color":"${choice.followup.character.color}"}\n`
-                  : `tellraw @a[limit=1] {"text":"[${choice.followup.character.name}] ${choice.followup.text.replace(/"/g, '\\"')}","color":"${choice.followup.character.color}"}\n`;
+                  ? `tellraw @p {"text":"[${choice.followup.character.name}] ${choice.followup.text.replace(/"/g, '\\"')}","color":"${choice.followup.character.color}"}\n`
+                  : `tellraw @p {"text":"[${choice.followup.character.name}] ${choice.followup.text.replace(/"/g, '\\"')}","color":"${choice.followup.character.color}"}\n`;
                 if (index < lines.length - 1) {
                   choiceFunctions[choice.function] += version === '1.12'
-                    ? `scoreboard players set @a DialogTimer ${line.delay}\n`
+                    ? `scoreboard players set @p DialogTimer ${line.delay}\n`
                     : `schedule function ${namespace}:dialog ${line.delay}t\n`;
+                } else {
+                  choiceFunctions[choice.function] += version === '1.12'
+                    ? `scoreboard players set @p DialogTimer ${line.delay}\n`
+                    : `schedule function ${namespace}:reset ${line.delay}t\n`;
                 }
+              } else {
+                choiceFunctions[choice.function] += `function ${namespace}:dialog\n`;
               }
             });
             mainCommands += `]\n`;
@@ -442,34 +452,41 @@
           } else if (index < lines.length - 1) {
             if (line.transition === 'button') {
               mainCommands += version === '1.12'
-                ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a {"text":"[Далее]","color":"gray","clickEvent":{"action":"run_command","value":"/function ${namespace}:next"}}}\n`
-                : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] {"text":"[Далее]","color":"gray","clickEvent":{"action":"run_command","value":"/function ${namespace}:next"}}}\n`;
+                ? `execute @p[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @p {"text":"[Далее]","color":"gray","clickEvent":{"action":"run_command","value":"/function ${namespace}:next"}}}\n`
+                : `execute${condition} if score @p ${scoreboard} matches ${stage} run tellraw @p {"text":"[Далее]","color":"gray","clickEvent":{"action":"run_command","value":"/function ${namespace}:next"}}}\n`;
             } else if (line.transition === 'delay') {
               mainCommands += version === '1.12'
-                ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ scoreboard players set @a DialogTimer ${line.delay}\n`
-                : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run schedule function ${namespace}:next ${line.delay}t\n`;
+                ? `execute @p[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ scoreboard players set @p DialogTimer ${line.delay}\n`
+                : `execute${condition} if score @p ${scoreboard} matches ${stage} run schedule function ${namespace}:next ${line.delay}t\n`;
             }
             stage++;
           } else {
             // Последняя реплика: сброс с задержкой
             mainCommands += version === '1.12'
-              ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ scoreboard players set @a DialogTimer ${line.delay}\n`
-              : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run schedule function ${namespace}:reset ${line.delay}t\n`;
+              ? `execute @p[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ scoreboard players set @p DialogTimer ${line.delay}\n`
+              : `execute${condition} if score @p ${scoreboard} matches ${stage} run schedule function ${namespace}:reset ${line.delay}t\n`;
           }
         });
 
         if (version === '1.12') {
           mainCommands += `\n# Обработка таймера\n`;
-          mainCommands += `scoreboard players remove @a[score_DialogTimer_min=1] DialogTimer 1\n`;
-          mainCommands += `execute @a[score_${scoreboard}_min=1..${stage - 1},score_DialogTimer=0] ~ ~ ~ function ${namespace}:next\n`;
-          mainCommands += `execute @a[score_${scoreboard}_min=${stage},score_DialogTimer=0] ~ ~ ~ function ${namespace}:reset\n`;
+          mainCommands += `scoreboard players remove @p[score_DialogTimer_min=1] DialogTimer 1\n`;
+          mainCommands += `execute @p[score_${scoreboard}_min=1..${stage - 1},score_DialogTimer=0] ~ ~ ~ function ${namespace}:next\n`;
+          mainCommands += `execute @p[score_${scoreboard}_min=${stage},score_DialogTimer=0] ~ ~ ~ function ${namespace}:reset\n`;
         }
 
         // Генерация функции сброса
         let resetFunction = `# Сброс диалога\n`;
         resetFunction += version === '1.12'
-          ? `scoreboard players set @a ${scoreboard} 0\nscoreboard players set @a DialogTimer 0\n`
-          : `scoreboard players set @a[limit=1] ${scoreboard} 0\n`;
+          ? `scoreboard players set @p ${scoreboard} 0\nscoreboard players set @p DialogTimer 0\n`
+          : `scoreboard players set @p ${scoreboard} 0\n`;
+
+        // Генерация функции next
+        let nextFunction = `# Продвиньте диалог\n`;
+        nextFunction += version === '1.12'
+          ? `scoreboard players add @p ${scoreboard} 1\n`
+          : `scoreboard players add @p ${scoreboard} 1\n`;
+        nextFunction += `function ${namespace}:dialog\n`;
 
         convergencePoints.forEach(point => {
           console.log(`Обработка точки конвергенции: from ${point.from}, after ${point.after}`);
@@ -480,19 +497,18 @@
           }
           lines[lineIndex].choices.forEach((choice, i) => {
             if (!choice.followup.text && lines[lineIndex + 1]) {
-              choiceFunctions[choice.function] += version === '1.12'
-                ? `scoreboard players set @a DialogTimer ${lines[lineIndex].delay}\n`
-                : `schedule function ${namespace}:dialog ${lines[lineIndex].delay}t\n`;
+              choiceFunctions[choice.function] = choiceFunctions[choice.function].replace(
+                `function ${namespace}:dialog\n`,
+                version === '1.12'
+                  ? `scoreboard players set @p DialogTimer ${lines[lineIndex].delay}\n`
+                  : `schedule function ${namespace}:dialog ${lines[lineIndex].delay}t\n`
+              );
             }
           });
         });
 
-        let nextFunction = `# Продвиньте диалог\n`;
-        nextFunction += version === '1.12'
-          ? `scoreboard players add @a ${scoreboard} 1\n`
-          : `scoreboard players add @a[limit=1] ${scoreboard} 1\n`;
-
         const files = {
+          'init.mcfunction': initCommands,
           'dialog.mcfunction': mainCommands,
           'next.mcfunction': nextFunction,
           'reset.mcfunction': resetFunction,
@@ -518,7 +534,7 @@
         window.version = version;
         window.namespace = namespace;
 
-        alert('Команды успешно сгенерированы!');
+        alert('Команды успешно сгенерированы! Выполните /function ' + namespace + ':init один раз после установки датапака.');
       } catch (error) {
         console.error('Ошибка при генерации:', error);
         alert(`Ошибка: ${error.message}. Проверьте консоль браузера для деталей.`);
@@ -550,6 +566,7 @@
           zip.file(`data/${namespace}/${functionFolder}/${name}`, content);
         });
         zip.file(`data/${namespace}/${tagFolder}/functions/tick.json`, JSON.stringify({ values: [`${namespace}:dialog`] }));
+        zip.file(`data/${namespace}/${tagFolder}/functions/load.json`, JSON.stringify({ values: [`${namespace}:init`] }));
         zip.file('pack.mcmeta', JSON.stringify({
           pack: { pack_format: packFormat, description: 'Dialogue Datapack' }
         }, null, 2));
