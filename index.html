@@ -58,7 +58,8 @@
         <input id="namespace" type="text" class="mt-1 block w-full p-2 border rounded-md" placeholder="Например | dialog" value="dialog">
       </div>
       <div id="lines" class="space-y-4"></div>
-      <button onclick="addLine()" class="bg-green-500 text-white px-4 py-2 rounded-md mt-4">Добавить реплику</button>
+      <button onclick="addLine()" class="bg-green-500 text-white px-4 py-2 rounded-md mt-4">
+      Добавить реплику</button>
       <button onclick="generateDialogue()" class="bg-blue-500 text-white px-4 py-2 rounded-md mt-4 ml-2">Сгенерировать команды</button>
     </div>
 
@@ -194,7 +195,7 @@
         </div>
         <button onclick="this.parentElement.remove(); updateTransitionState(this.parentElement.parentElement)" class="bg-red-500 text-white px-2 py-1 rounded-md">Удалить</button>
       `;
-      button.parentElement.querySelector('.choices').appendChild(choiceDiv);
+      button.parentElement.query_SELECTOR('.choices').appendChild(choiceDiv);
       updateTransitionState(button.parentElement);
     }
 
@@ -468,7 +469,7 @@
           });
         });
 
-        const nextFunction = `# Продвиньте диалог\n`;
+        let nextFunction = `# Продвиньте диалог\n`; // Используем let вместо const
         nextFunction += version === '1.12'
           ? `scoreboard players add @a ${scoreboard} 1\n`
           : `scoreboard players add @a[limit=1] ${scoreboard} 1\n`;
