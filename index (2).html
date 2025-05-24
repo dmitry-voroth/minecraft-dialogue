@@ -1,0 +1,604 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Minecraft Dialogue Generator (Fixed Syntax Edition)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex flex-col items-center min-h-screen">
+  <div class="container mx-auto p-4 max-w-4xl">
+    <h1 class="text-3xl font-bold text-center mb-6">Minecraft Dialogue Generator (Fixed Syntax Edition)</h1>
+    
+    <div class="mb-6">
+      <button onclick="showTab('characters')" class="bg-blue-500 text-white px-4 py-2 rounded-md mr-2">Управление персонажами</button>
+      <button onclick="showTab('dialogue')" class="bg-blue-500 text-white px-4 py-2 rounded-md">Создать диалог</button>
+    </div>
+
+    <div id="characters-tab" class="bg-white p-6 rounded-lg shadow-md">
+      <h2 class="text-xl font-semibold mb-4">Управление персонажами</h2>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700">Имя персонажа</label>
+        <input id="new-character-name" type="text" class="mt-1 block w-full p-2 border rounded-md" placeholder="Например | Villager1">
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700">Цвет текста</label>
+        <select id="new-character-color" class="mt-1 block w-full p-2 border rounded-md">
+          <option value="green">Зелёный</option>
+          <option value="yellow">Жёлтый</option>
+          <option value="red">Красный</option>
+          <option value="blue">Синий</option>
+          <option value="white">Белый</option>
+        </select>
+      </div>
+      <button onclick="addCharacter()" class="bg-green-500 text-white px-4 py-2 rounded-md">Добавить персонажа</button>
+      <div id="character-list" class="mt-4 space-y-2"></div>
+    </div>
+
+    <div id="dialogue-tab" class="bg-white p-6 rounded-lg shadow-md hidden">
+      <h2 class="text-xl font-semibold mb-4">Создать диалог</h2>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700">Версия Minecraft</label>
+        <select id="minecraft-version" class="mt-1 block w-full p-2 border rounded-md">
+          <option value="1.12">1.12</option>
+          <option value="1.13-1.19">1.13–1.19</option>
+          <option value="1.20+" selected>1.20+</option>
+        </select>
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700">Название Scoreboard</label>
+        <input id="scoreboard-name" type="text" class="mt-1 block w-full p-2 border rounded-md" placeholder="Например | Dialog" value="Dialog">
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700">Название Scoreboard для сюжета</label>
+        <input id="plot-scoreboard" type="text" class="mt-1 block w-full p-2 border rounded-md" placeholder="Например | PlotPoints" value="PlotPoints">
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700">Namespace датапака</label>
+        <input id="namespace" type="text" class="mt-1 block w-full p-2 border rounded-md" placeholder="Например | dialog" value="dialog">
+      </div>
+      <div id="lines" class="space-y-4"></div>
+      <button onclick="addLine()" class="bg-green-500 text-white px-4 py-2 rounded-md mt-4">Добавить реплику</button>
+      <button onclick="generateDialogue()" class="bg-blue-500 text-white px-4 py-2 rounded-md mt-4 ml-2">Сгенерировать команды</button>
+    </div>
+
+    <div id="output" class="bg-white p-6 rounded-lg shadow-md hidden">
+      <h2 class="text-xl font-semibold mb-4">Сгенерированные файлы</h2>
+      <div id="files" class="space-y-4"></div>
+      <button onclick="downloadAll()" class="bg-purple-500 text-white px-4 py-2 rounded-md mt-4">Скачать все (.zip)</button>
+    </div>
+
+    <div id="edit-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center hidden">
+      <div class="bg-white p-6 rounded-lg shadow-md">
+        <h2 class="text-xl font-semibold mb-4">Редактировать персонажа</h2>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700">Имя персонажа</label>
+          <input id="edit-character-name" type="text" class="mt-1 block w-full p-2 border rounded-md">
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700">Цвет текста</label>
+          <select id="edit-character-color" class="mt-1 block w-full p-2 border rounded-md">
+            <option value="green">Зелёный</option>
+            <option value="yellow">Жёлтый</option>
+            <option value="red">Красный</option>
+            <option value="blue">Синий</option>
+            <option value="white">Белый</option>
+          </select>
+        </div>
+        <button onclick="saveCharacterEdit()" class="bg-green-500 text-white px-4 py-2 rounded-md">Сохранить</button>
+        <button onclick="closeModal()" class="bg-red-500 text-white px-4 py-2 rounded-md ml-2">Отмена</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script>
+    let characters = [];
+    let editIndex = null;
+
+    function showTab(tab) {
+      document.getElementById('characters-tab').classList.add('hidden');
+      document.getElementById('dialogue-tab').classList.add('hidden');
+      document.getElementById(`${tab}-tab`).classList.remove('hidden');
+    }
+
+    function updateCharacterList() {
+      const list = document.getElementById('character-list');
+      list.innerHTML = '';
+      characters.forEach((char, index) => {
+        const div = document.createElement('div');
+        div.className = 'flex space-x-2 items-center';
+        div.innerHTML = `
+          <span class="flex-1">${char.name} (${char.color})</span>
+          <button onclick="openEditModal(${index})" class="bg-yellow-500 text-white px-2 py-1 rounded-md">Редактировать</button>
+          <button onclick="deleteCharacter(${index})" class="bg-red-500 text-white px-2 py-1 rounded-md">Удалить</button>
+        `;
+        list.appendChild(div);
+      });
+      updateCharacterSelects();
+    }
+
+    function addCharacter() {
+      const name = document.getElementById('new-character-name').value.trim();
+      const color = document.getElementById('new-character-color').value;
+      if (!name) {
+        alert('Введите имя персонажа!');
+        return;
+      }
+      characters.push({ name, color });
+      document.getElementById('new-character-name').value = '';
+      updateCharacterList();
+    }
+
+    function openEditModal(index) {
+      editIndex = index;
+      document.getElementById('edit-character-name').value = characters[index].name;
+      document.getElementById('edit-character-color').value = characters[index].color;
+      document.getElementById('edit-modal').classList.remove('hidden');
+    }
+
+    function saveCharacterEdit() {
+      const name = document.getElementById('edit-character-name').value.trim();
+      const color = document.getElementById('edit-character-color').value;
+      if (!name) {
+        alert('Введите имя персонажа!');
+        return;
+      }
+      characters[editIndex] = { name, color };
+      closeModal();
+      updateCharacterList();
+    }
+
+    function closeModal() {
+      document.getElementById('edit-modal').classList.add('hidden');
+      editIndex = null;
+    }
+
+    function deleteCharacter(index) {
+      if (confirm(`Удалить персонажа ${characters[index].name}?`)) {
+        characters.splice(index, 1);
+        updateCharacterList();
+      }
+    }
+
+    function updateCharacterSelects() {
+      const selects = document.querySelectorAll('.line-character, .choice-followup-character');
+      selects.forEach(select => {
+        const current = select.value;
+        select.innerHTML = '<option value="">Выберите персонажа</option>' + 
+          characters.map(c => `<option value="${c.name}" ${c.name === current ? 'selected' : ''}>${c.name}</option>`).join('');
+      });
+    }
+
+    function addChoice(button) {
+      const choiceDiv = document.createElement('div');
+      choiceDiv.className = 'choice bg-white p-2 border rounded-md';
+      choiceDiv.innerHTML = `
+        <div class="flex space-x-2 mb-2">
+          <input type="text" class="choice-text flex-1 p-2 border rounded-md" placeholder="Текст выбора (например | [Да])">
+          <input type="text" class="choice-function flex-1 p-2 border rounded-md" placeholder="Функция (например | yes)">
+          <select class="choice-color p-2 border rounded-md">
+            <option value="blue">Синий</option>
+            <option value="red">Красный</option>
+            <option value="green">Зелёный</option>
+          </select>
+          <input type="number" class="choice-plot-points w-24 p-2 border rounded-md" placeholder="Очки сюжета" value="0">
+        </div>
+        <div class="mb-2">
+          <label class="block text-sm font-medium text-gray-700">Реплика после выбора</label>
+          <input type="text" class="choice-followup mt-1 block w-full p-2 border rounded-md" placeholder="Текст следующей реплики (необязательно)">
+          <select class="choice-followup-character mt-1 block w-full p-2 border rounded-md">
+            <option value="">Выберите персонажа (необязательно)</option>
+            ${characters.map(c => `<option value="${c.name}">${c.name}</option>`).join('')}
+          </select>
+        </div>
+        <button onclick="this.parentElement.remove(); updateTransitionState(this.parentElement.parentElement)" class="bg-red-500 text-white px-2 py-1 rounded-md">Удалить</button>
+      `;
+      button.parentElement.querySelector('.choices').appendChild(choiceDiv);
+      updateTransitionState(button.parentElement);
+    }
+
+    function addLine() {
+      const linesDiv = document.getElementById('lines');
+      const lineDiv = document.createElement('div');
+      lineDiv.className = 'line bg-gray-50 p-4 rounded-md';
+      lineDiv.innerHTML = `
+        <div class="flex justify-between items-center mb-2">
+          <h3 class="text-lg font-medium">Реплика</h3>
+          <button onclick="this.parentElement.parentElement.remove(); updateAllTransitionStates()" class="bg-red-500 text-white px-2 py-1 rounded-md">Удалить</button>
+        </div>
+        <div class="mb-2">
+          <label class="block text-sm font-medium text-gray-700">Персонаж</label>
+          <select class="line-character mt-1 block w-full p-2 border rounded-md">
+            <option value="">Выберите персонажа</option>
+            ${characters.map(c => `<option value="${c.name}">${c.name}</option>`).join('')}
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="block text-sm font-medium text-gray-700">Текст реплики</label>
+          <input type="text" class="line-text mt-1 block w-full p-2 border rounded-md" placeholder="Текст реплики">
+        </div>
+        <div class="mb-2">
+          <label class="block text-sm font-medium text-gray-700">Тип перехода</label>
+          <select class="line-transition mt-1 block w-full p-2 border rounded-md">
+            <option value="delay">Задержка</option>
+            <option value="button">Кнопка [Далее]</option>
+            <option value="none">Нет (при выборе)</option>
+          </select>
+        </div>
+        <div class="mb-2 delay-field">
+          <label class="block text-sm font-medium text-gray-700">Задержка (тики)</label>
+          <input type="number" class="line-delay mt-1 w-24 p-2 border rounded-md" placeholder="Тики" value="100">
+        </div>
+        <div class="mb-2 plot-condition">
+          <label class="block text-sm font-medium text-gray-700">Условие по сюжетным очкам</label>
+          <select class="plot-condition-type mt-1 w-32 p-2 border rounded-md">
+            <option value="none">Нет</option>
+            <option value="min">>=</option>
+            <option value="max"><=</option>
+            <option value="exact">==</option>
+          </select>
+          <input type="number" class="plot-condition-value mt-1 w-24 p-2 border rounded-md" placeholder="Значение" value="0">
+        </div>
+        <div class="choices mt-2 space-y-2"></div>
+        <button onclick="addChoice(this)" class="bg-blue-500 text-white px-2 py-1 rounded-md mt-2">Добавить выбор</button>
+      `;
+      linesDiv.appendChild(lineDiv);
+      lineDiv.querySelector('.line-transition').addEventListener('change', function() {
+        const delayField = this.parentElement.parentElement.querySelector('.delay-field');
+        delayField.classList.toggle('hidden', this.value !== 'delay');
+      });
+
+      // Используем MutationObserver вместо DOMSubtreeModified
+      const choicesDiv = lineDiv.querySelector('.choices');
+      const observer = new MutationObserver(() => updateTransitionState(lineDiv));
+      observer.observe(choicesDiv, { childList: true });
+      updateAllTransitionStates();
+    }
+
+    function updateTransitionState(lineElement) {
+      const choices = lineElement.querySelector('.choices').children.length > 0;
+      const transitionSelect = lineElement.querySelector('.line-transition');
+      const delayField = lineElement.querySelector('.delay-field');
+      if (choices) {
+        transitionSelect.value = 'none';
+        transitionSelect.disabled = true;
+        delayField.classList.add('hidden');
+      } else {
+        transitionSelect.disabled = false;
+        if (transitionSelect.value === 'delay') delayField.classList.remove('hidden');
+        else delayField.classList.add('hidden');
+      }
+    }
+
+    function updateAllTransitionStates() {
+      document.querySelectorAll('.line').forEach(updateTransitionState);
+    }
+
+    function generateDialogue() {
+      try {
+        console.log('Начало генерации диалога...');
+        const version = document.getElementById('minecraft-version').value;
+        const scoreboard = document.getElementById('scoreboard-name').value.trim() || 'Dialog';
+        const plotScoreboard = document.getElementById('plot-scoreboard').value.trim() || 'PlotPoints';
+        const namespace = document.getElementById('namespace').value.trim() || 'dialog';
+
+        // Собираем данные реплик
+        const lines = Array.from(document.querySelectorAll('.line')).map((line, index) => {
+          console.log(`Обработка реплики ${index + 1}`);
+          const characterName = line.querySelector('.line-character').value;
+          const character = characters.find(c => c.name === characterName) || { name: '', color: 'white' };
+          const text = line.querySelector('.line-text').value.trim();
+          const transition = line.querySelector('.line-transition').value;
+          const delayInput = line.querySelector('.line-delay').value;
+          const delay = delayInput ? parseInt(delayInput) : 100;
+          const plotConditionType = line.querySelector('.plot-condition-type').value;
+          const plotConditionValue = line.querySelector('.plot-condition-value').value;
+          const plotCondition = {
+            type: plotConditionType,
+            value: plotConditionValue ? parseInt(plotConditionValue) : 0
+          };
+
+          const choices = Array.from(line.querySelectorAll('.choice')).map((choice, choiceIndex) => {
+            console.log(`Обработка выбора ${choiceIndex + 1} в реплике ${index + 1}`);
+            const choiceText = choice.querySelector('.choice-text').value.trim();
+            const choiceFunction = choice.querySelector('.choice-function').value.trim();
+            const choiceColor = choice.querySelector('.choice-color').value;
+            const choicePlotPoints = choice.querySelector('.choice-plot-points').value;
+            const followupText = choice.querySelector('.choice-followup').value.trim();
+            const followupCharacterName = choice.querySelector('.choice-followup-character').value;
+            const followupCharacter = characters.find(c => c.name === followupCharacterName) || { name: '', color: 'white' };
+
+            return {
+              text: choiceText,
+              function: choiceFunction,
+              color: choiceColor,
+              plotPoints: choicePlotPoints ? parseInt(choicePlotPoints) : 0,
+              followup: {
+                text: followupText,
+                character: followupCharacter
+              }
+            };
+          });
+
+          return {
+            character,
+            text,
+            transition,
+            delay,
+            plotCondition,
+            choices
+          };
+        });
+
+        console.log('Собранные данные:', lines);
+
+        // Валидация данных
+        if (lines.length === 0) {
+          throw new Error('Добавьте хотя бы одну реплику!');
+        }
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!line.character.name) {
+            throw new Error(`Выберите персонажа для реплики ${i + 1}`);
+          }
+          if (!line.text) {
+            throw new Error(`Введите текст для реплики ${i + 1}`);
+          }
+          for (let j = 0; j < line.choices.length; j++) {
+            const choice = line.choices[j];
+            if (!choice.text) {
+              throw new Error(`Введите текст для выбора ${j + 1} в реплике ${i + 1}`);
+            }
+            if (!choice.function) {
+              throw new Error(`Введите название функции для выбора ${j + 1} в реплике ${i + 1}`);
+            }
+            if (choice.followup.text && !choice.followup.character.name) {
+              throw new Error(`Выберите персонажа для последующей реплики в выборе ${j + 1} реплики ${i + 1}`);
+            }
+          }
+        }
+
+        // Генерация команд
+        let stage = 1;
+        let mainCommands = `# Инициализация scoreboard\n`;
+        mainCommands += `scoreboard objectives add ${scoreboard} dummy\n`;
+        mainCommands += `scoreboard objectives add ${plotScoreboard} dummy\n`;
+        if (version === '1.12') {
+          mainCommands += `scoreboard objectives add DialogTimer dummy\n`; // Для задержек в 1.12
+        }
+        mainCommands += `\n# Установка начальных значений\n`;
+        if (version === '1.12') {
+          mainCommands += `scoreboard players set @a ${scoreboard} 0\n`;
+          mainCommands += `scoreboard players set @a ${plotScoreboard} 0\n`;
+          mainCommands += `scoreboard players set @a DialogTimer 0\n`;
+        } else {
+          mainCommands += `scoreboard players set @a[limit=1] ${scoreboard} 0\n`;
+          mainCommands += `scoreboard players set @a[limit=1] ${plotScoreboard} 0\n`;
+        }
+        mainCommands += `\n# Команды для диалога\n`;
+
+        const choiceFunctions = {};
+        let convergencePoints = [];
+
+        lines.forEach((line, index) => {
+          console.log(`Генерация команд для реплики ${index + 1}, стадия ${stage}`);
+          let condition = '';
+          if (line.plotCondition.type !== 'none') {
+            const value = line.plotCondition.value;
+            if (version === '1.12') {
+              condition = ` if entity @a[score_${plotScoreboard}_min=${value}]`;
+              if (line.plotCondition.type === 'max') condition = ` if entity @a[score_${plotScoreboard}=${value}]`;
+              else if (line.plotCondition.type === 'exact') condition = ` if entity @a[score_${plotScoreboard}=${value},score_${plotScoreboard}_min=${value}]`;
+            } else {
+              condition = ` if score @a[limit=1] ${plotScoreboard} matches `;
+              if (line.plotCondition.type === 'min') condition += `${value}..`;
+              else if (line.plotCondition.type === 'max') condition += `..${value}`;
+              else condition += `${value}`;
+            }
+          }
+
+          mainCommands += `# Сообщение ${stage}: ${line.character.name}\n`;
+          if (version === '1.12') {
+            mainCommands += `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a {"text":"[${line.character.name}] ${line.text.replace(/"/g, '\\"')}","color":"${line.character.color}"}\n`;
+          } else {
+            mainCommands += `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] {"text":"[${line.character.name}] ${line.text.replace(/"/g, '\\"')}","color":"${line.character.color}"}\n`;
+          }
+
+          if (line.choices.length > 0) {
+            mainCommands += version === '1.12'
+              ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a [`
+              : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] [`;
+            line.choices.forEach((choice, choiceIndex) => {
+              mainCommands += `{"text":"${choice.text}","color":"${choice.color}","clickEvent":{"action":"run_command","value":"/function ${namespace}:${choice.function}"}}`;
+              if (choiceIndex < line.choices.length - 1) mainCommands += ',';
+              const nextStage = stage + choiceIndex + 1;
+              choiceFunctions[choice.function] = `# Функция для выбора: ${choice.text}\n`;
+              if (choice.plotPoints !== 0) {
+                choiceFunctions[choice.function] += version === '1.12'
+                  ? `scoreboard players add @a ${plotScoreboard} ${choice.plotPoints}\n`
+                  : `scoreboard players add @a[limit=1] ${plotScoreboard} ${choice.plotPoints}\n`;
+              }
+              choiceFunctions[choice.function] += version === '1.12'
+                ? `scoreboard players set @a ${scoreboard} ${nextStage}\n`
+                : `scoreboard players set @a[limit=1] ${scoreboard} ${nextStage}\n`;
+              if (choice.followup.text) {
+                choiceFunctions[choice.function] += version === '1.12'
+                  ? `tellraw @a {"text":"[${choice.followup.character.name}] ${choice.followup.text.replace(/"/g, '\\"')}","color":"${choice.followup.character.color}"}\n`
+                  : `tellraw @a[limit=1] {"text":"[${choice.followup.character.name}] ${choice.followup.text.replace(/"/g, '\\"')}","color":"${choice.followup.character.color}"}\n`;
+                if (version === '1.12') {
+                  choiceFunctions[choice.function] += `scoreboard players set @a DialogTimer ${line.delay}\n`;
+                } else {
+                  choiceFunctions[choice.function] += `schedule function ${namespace}:dialog ${line.delay}t\n`;
+                }
+              }
+            });
+            mainCommands += `]\n`;
+            convergencePoints.push({ after: stage + line.choices.length, from: stage });
+            stage += line.choices.length;
+          } else if (index < lines.length - 1) {
+            if (line.transition === 'button') {
+              mainCommands += version === '1.12'
+                ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ tellraw @a {"text":"[Далее]","color":"gray","clickEvent":{"action":"run_command","value":"/function ${namespace}:next"}}}\n`
+                : `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run tellraw @a[limit=1] {"text":"[Далее]","color":"gray","clickEvent":{"action":"run_command","value":"/function ${namespace}:next"}}}\n`;
+            } else if (line.transition === 'delay') {
+              if (version === '1.12') {
+                mainCommands += `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ scoreboard players set @a DialogTimer ${line.delay}\n`;
+              } else {
+                mainCommands += `execute${condition} if score @a[limit=1] ${scoreboard} matches ${stage} run schedule function ${namespace}:next ${line.delay}t\n`;
+              }
+            }
+            stage++;
+          }
+        });
+
+        mainCommands += `\n# Сброс диалога\n`;
+        mainCommands += version === '1.12'
+          ? `execute @a[score_${scoreboard}_min=${stage},score_${scoreboard}=${stage}] ~ ~ ~ scoreboard players set @a ${scoreboard} 0\n`
+          : `execute if score @a[limit=1] ${scoreboard} matches ${stage} run scoreboard players set @a[limit=1] ${scoreboard} 0\n`;
+
+        // Добавляем обработку таймера для 1.12
+        if (version === '1.12') {
+          mainCommands += `\n# Обработка таймера\n`;
+          mainCommands += `scoreboard players remove @a[score_DialogTimer_min=1] DialogTimer 1\n`;
+          mainCommands += `execute @a[score_${scoreboard}_min=1..999,score_DialogTimer=0] ~ ~ ~ scoreboard players add @a ${scoreboard} 1\n`;
+        }
+
+        convergencePoints.forEach(point => {
+          for (let i = point.from + 1; i <= point.from + lines[point.from - 1].choices.length; i++) {
+            const choice = lines[point.from - 1].choices[i - point.from - 1];
+            if (!choice.followup.text) {
+              choiceFunctions[choice.function] += version === '1.12'
+                ? `scoreboard players set @a DialogTimer ${lines[point.from - 1].delay}\n`
+                : `schedule function ${namespace}:dialog ${lines[point.from - 1].delay}t\n`;
+            }
+          }
+        });
+
+        const nextFunction = `# Продвиньте диалог\n`;
+        nextFunction += version === '1.12'
+          ? `scoreboard players add @a ${scoreboard} 1\n`
+          : `scoreboard players add @a[limit=1] ${scoreboard} 1\n`;
+
+        const files = {
+          'dialog.mcfunction': mainCommands,
+          'next.mcfunction': nextFunction,
+          ...Object.fromEntries(Object.entries(choiceFunctions).map(([name, content]) => [`${name}.mcfunction`, content]))
+        };
+
+        console.log('Сгенерированные файлы:', files);
+
+        const filesDiv = document.getElementById('files');
+        filesDiv.innerHTML = '';
+        Object.entries(files).forEach(([name, content]) => {
+          const fileDiv = document.createElement('div');
+          fileDiv.innerHTML = `
+            <h3 class="text-lg font-semibold">${name}</h3>
+            <pre class="bg-gray-100 p-4 rounded-md overflow-x-auto">${content}</pre>
+            <button onclick="copyText(this)" class="bg-green-500 text-white px-4 py-2 rounded-md mt-2">Копировать</button>
+          `;
+          filesDiv.appendChild(fileDiv);
+        });
+
+        document.getElementById('output').classList.remove('hidden');
+        window.generatedFiles = files;
+        window.version = version;
+        window.namespace = namespace;
+
+        alert('Команды успешно сгенерированы!');
+      } catch (error) {
+        console.error('Ошибка при генерации:', error);
+        alert(`Ошибка: ${error.message}. Проверьте консоль браузера для деталей.`);
+      }
+    }
+
+    function copyText(button) {
+      try {
+        const pre = button.previousElementSibling;
+        navigator.clipboard.writeText(pre.textContent).then(() => {
+          alert('Команды скопированы в буфер обмена!');
+        });
+      } catch (error) {
+        console.error('Ошибка при копировании:', error);
+        alert('Ошибка при копировании текста. Проверьте консоль браузера.');
+      }
+    }
+
+    function downloadAll() {
+      try {
+        const zip = new JSZip();
+        const version = window.version || '1.20+';
+        const namespace = window.namespace || 'dialog';
+        const functionFolder = version === '1.20+' ? 'function' : 'functions';
+        const tagFolder = version === '1.20+' ? 'tag' : 'tags';
+        const packFormat = version === '1.12' ? 3 : version === '1.13-1.19' ? 6 : 10;
+
+        Object.entries(window.generatedFiles).forEach(([name, content]) => {
+          zip.file(`data/${namespace}/${functionFolder}/${name}`, content);
+        });
+        zip.file(`data/${namespace}/${tagFolder}/functions/tick.json`, JSON.stringify({ values: [`${namespace}:dialog`] }));
+        zip.file('pack.mcmeta', JSON.stringify({
+          pack: { pack_format: packFormat, description: 'Dialogue Datapack' }
+        }, null, 2));
+        zip.generateAsync({ type: 'blob' }).then(blob => {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'dialog_datapack.zip';
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+      } catch (error) {
+        console.error('Ошибка при создании ZIP:', error);
+        alert('Ошибка при создании ZIP-архива. Проверьте консоль браузера.');
+      }
+    }
+
+    // Проверка загрузки скрипта
+    console.log('Скрипт загружен, функции определены.');
+
+    updateCharacterList();
+    addLine();
+  </script>
+</body>
+</html>
